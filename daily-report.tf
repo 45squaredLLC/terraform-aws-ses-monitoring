@@ -70,10 +70,18 @@ resource "aws_iam_role_policy" "report" {
         },
         {
           # Scoped to identities in this account, and to the configured sender.
-          Sid      = "SendReportEmail"
-          Effect   = "Allow"
-          Action   = ["ses:SendEmail", "ses:SendRawEmail"]
-          Resource = "arn:${local.partition}:ses:${local.region}:${local.account_id}:identity/*"
+          #
+          # The configuration-set ARN is required as well: this module attaches
+          # its configuration set as each identity's *default*, so SES authorises
+          # the send against the configuration set too and an identity-only
+          # policy fails with AccessDenied on configuration-set/<name>.
+          Sid    = "SendReportEmail"
+          Effect = "Allow"
+          Action = ["ses:SendEmail", "ses:SendRawEmail"]
+          Resource = [
+            "arn:${local.partition}:ses:${local.region}:${local.account_id}:identity/*",
+            "arn:${local.partition}:ses:${local.region}:${local.account_id}:configuration-set/${module.primary_pipeline.configuration_set_name}",
+          ]
           Condition = {
             StringEquals = { "ses:FromAddress" = var.report_from_address }
           }

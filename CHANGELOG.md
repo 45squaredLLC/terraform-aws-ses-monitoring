@@ -3,6 +3,19 @@
 All notable changes to this module are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-09-08
+
+### Fixed
+
+- The daily report's `ses:SendEmail` permission was scoped to identity ARNs only.
+  Because the module attaches its configuration set as each identity's *default*,
+  SES also authorises the send against the configuration-set resource, so the
+  report failed with `AccessDenied on ... configuration-set/<name>`. The policy
+  now grants both ARNs, still conditioned on `ses:FromAddress`.
+
+  Anyone running 1.0.0 or 1.0.1 with `enable_daily_report = true` should upgrade:
+  the failure is silent until the scheduled run.
+
 ## [1.0.1] - 2026-09-08
 
 ### Fixed

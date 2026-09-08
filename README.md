@@ -238,8 +238,10 @@ events if you use it.
   so it needs neither `PutItem` nor `GetItem`. The report holds `dynamodb:Query`
   on the metrics table and its indexes, `dynamodb:Scan` on the suppression table
   only (the metrics table is never scanned), and `ses:SendEmail` restricted to
-  identities in your account with a `ses:FromAddress` condition pinning the
-  sender. Each function can write only to its own log group.
+  identities in your account **and** the module's configuration set, with a
+  `ses:FromAddress` condition pinning the sender. Both ARNs are needed: since the
+  configuration set is attached as each identity's default, SES authorises the
+  send against it as well. Each function can write only to its own log group.
 - The SES events topic accepts publishes only from `ses.amazonaws.com` in your
   own account (`AWS:SourceAccount` condition), and both Lambda trust policies
   carry an `aws:SourceAccount` condition so they cannot be assumed cross-account.
