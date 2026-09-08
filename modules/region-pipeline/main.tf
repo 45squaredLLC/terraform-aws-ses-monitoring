@@ -60,10 +60,9 @@ resource "null_resource" "attach_configuration_set" {
   for_each = var.attach_default_configuration_set ? toset(var.identities) : toset([])
 
   triggers = {
-    identity       = each.value
-    config_set     = local.configuration_set_name
-    region         = local.region
-    event_dest_ids = aws_sesv2_configuration_set_event_destination.sns.id
+    identity   = each.value
+    config_set = local.configuration_set_name
+    region     = local.region
   }
 
   # PutEmailIdentityConfigurationSetAttributes throttles hard when Terraform
@@ -83,6 +82,8 @@ resource "null_resource" "attach_configuration_set" {
         --region "$SES_REGION"
     EOT
   }
+
+  depends_on = [aws_sesv2_configuration_set_event_destination.sns]
 }
 
 # ---------------------------------------------------------------------------

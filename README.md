@@ -14,6 +14,9 @@ it — see [Notifications](#notifications).
 
 ## What it builds
 
+An editable diagram lives at [`docs/architecture.drawio`](docs/architecture.drawio)
+(open at [app.diagrams.net](https://app.diagrams.net)).
+
 ```
 SES identity (default configuration set = this module's)
    │  SEND / DELIVERY / BOUNCE / COMPLAINT / REJECT / DELIVERY_DELAY
