@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Format
+        run: terraform fmt -recursive -check -diff
+
+      - name: Validate module
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: Validate examples
+        run: |
+          for dir in examples/*/; do
+            echo "==> $dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+
+  python:
+    name: Lambda source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile
+        run: |
+          python -m compileall -q \
+            lambda/ses_daily_report.py \
+            modules/region-pipeline/lambda/ses_event_processor.py
+
+      - name: Lint
+        run: |
+          pipx install ruff
+          ruff check lambda modules/region-pipeline/lambda
+          ruff format --check lambda modules/region-pipeline/lambda

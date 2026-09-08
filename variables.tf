@@ -1,0 +1,288 @@
+# ---------------------------------------------------------------------------
+# Naming and tagging
+# ---------------------------------------------------------------------------
+variable "name_prefix" {
+  description = "Prefix applied to every resource name created by this module."
+  type        = string
+  default     = "ses-monitoring"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9][a-zA-Z0-9-]{0,32}$", var.name_prefix))
+    error_message = "name_prefix must be 1-33 alphanumeric or hyphen characters and start with alphanumeric."
+  }
+}
+
+variable "tags" {
+  description = "Tags applied to every taggable resource."
+  type        = map(string)
+  default     = {}
+}
+
+# ---------------------------------------------------------------------------
+# Identities
+# ---------------------------------------------------------------------------
+variable "identities" {
+  description = <<-EOT
+    Verified SES identities (domains and/or email addresses) in the primary
+    region whose events should be captured. The module attaches its configuration
+    set as each identity's *default* configuration set, so existing senders are
+    captured without any application change.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "attach_default_configuration_set" {
+  description = <<-EOT
+    Attach the configuration set as the default configuration set on each entry of
+    `identities`. This uses the AWS CLI through a `null_resource`, because the AWS
+    provider cannot set a default configuration set on identities it does not
+    manage. Requires AWS CLI v2 wherever Terraform runs. Set to false to manage the
+    attachment yourself (e.g. via `aws_sesv2_email_identity.configuration_set_name`).
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "matching_event_types" {
+  description = "SES event types delivered to the pipeline."
+  type        = list(string)
+  default     = ["SEND", "DELIVERY", "BOUNCE", "COMPLAINT", "REJECT", "DELIVERY_DELAY"]
+}
+
+# ---------------------------------------------------------------------------
+# DynamoDB
+# ---------------------------------------------------------------------------
+variable "metrics_table_name" {
+  description = "Name of the per-identity daily metrics table. Defaults to \"<name_prefix>-event-metrics\"."
+  type        = string
+  default     = null
+}
+
+variable "suppression_table_name" {
+  description = "Name of the suppression (block list) table. Defaults to \"<name_prefix>-suppression-list\"."
+  type        = string
+  default     = null
+}
+
+variable "metrics_ttl_days" {
+  description = "Days to retain per-identity daily counter rows (DynamoDB TTL)."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.metrics_ttl_days > 0
+    error_message = "metrics_ttl_days must be greater than 0."
+  }
+}
+
+variable "dynamodb_billing_mode" {
+  description = "DynamoDB billing mode for both tables."
+  type        = string
+  default     = "PAY_PER_REQUEST"
+
+  validation {
+    condition     = contains(["PAY_PER_REQUEST", "PROVISIONED"], var.dynamodb_billing_mode)
+    error_message = "dynamodb_billing_mode must be PAY_PER_REQUEST or PROVISIONED."
+  }
+}
+
+variable "dynamodb_point_in_time_recovery" {
+  description = "Enable point-in-time recovery on both DynamoDB tables."
+  type        = bool
+  default     = true
+}
+
+variable "dynamodb_deletion_protection" {
+  description = "Enable deletion protection on both DynamoDB tables."
+  type        = bool
+  default     = false
+}
+
+variable "dynamodb_kms_key_arn" {
+  description = <<-EOT
+    Optional customer managed KMS key ARN for DynamoDB encryption at rest. When
+    null the tables use the AWS owned key (still encrypted, at no cost).
+  EOT
+  type        = string
+  default     = null
+}
+
+# ---------------------------------------------------------------------------
+# Alerting
+# ---------------------------------------------------------------------------
+variable "alert_sns_topic_arn" {
+  description = <<-EOT
+    Existing SNS topic ARN that receives real-time bounce/complaint alerts and the
+    daily "over threshold" summary — for example a topic fronted by a
+    Slack-forwarding Lambda. Leave null to create a topic (see
+    `create_alert_topic`) or to disable alerting entirely.
+  EOT
+  type        = string
+  default     = null
+}
+
+variable "create_alert_topic" {
+  description = <<-EOT
+    Create an SNS alert topic instead of supplying `alert_sns_topic_arn`. Subscribe
+    your own endpoints (email, Slack forwarder, PagerDuty…) to
+    `output.alert_topic_arn`. Ignored when `alert_sns_topic_arn` is set.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "alert_bounce_subtypes" {
+  description = "Bounce types recorded to the suppression list and alerted on in real time."
+  type        = list(string)
+  default     = ["Permanent"]
+}
+
+# ---------------------------------------------------------------------------
+# Daily report
+# ---------------------------------------------------------------------------
+variable "enable_daily_report" {
+  description = "Create the daily digest Lambda and its EventBridge schedule."
+  type        = bool
+  default     = true
+}
+
+variable "report_from_address" {
+  description = <<-EOT
+    From address for the daily digest email. Must belong to a verified SES identity
+    in the primary region. Required when `enable_daily_report` is true.
+  EOT
+  type        = string
+  default     = null
+}
+
+variable "report_to_addresses" {
+  description = "Recipients of the daily digest email. Required when `enable_daily_report` is true."
+  type        = list(string)
+  default     = []
+}
+
+variable "report_schedule_expression" {
+  description = "EventBridge schedule for the daily digest (UTC)."
+  type        = string
+  default     = "cron(0 13 ? * * *)"
+}
+
+variable "bounce_threshold" {
+  description = "Bounce rate (fraction) at or above which an identity is flagged. AWS considers 5% the danger level."
+  type        = number
+  default     = 0.05
+
+  validation {
+    condition     = var.bounce_threshold > 0 && var.bounce_threshold <= 1
+    error_message = "bounce_threshold must be a fraction greater than 0 and at most 1."
+  }
+}
+
+variable "complaint_threshold" {
+  description = "Complaint rate (fraction) at or above which an identity is flagged. AWS considers 0.1% the danger level."
+  type        = number
+  default     = 0.001
+
+  validation {
+    condition     = var.complaint_threshold > 0 && var.complaint_threshold <= 1
+    error_message = "complaint_threshold must be a fraction greater than 0 and at most 1."
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Lambda
+# ---------------------------------------------------------------------------
+variable "lambda_runtime" {
+  description = "Python runtime for both Lambdas."
+  type        = string
+  default     = "python3.12"
+}
+
+variable "processor_timeout" {
+  description = "Timeout in seconds for the event processor Lambda."
+  type        = number
+  default     = 60
+}
+
+variable "processor_memory_size" {
+  description = "Memory in MB for the event processor Lambda."
+  type        = number
+  default     = 128
+}
+
+variable "report_timeout" {
+  description = "Timeout in seconds for the daily report Lambda."
+  type        = number
+  default     = 120
+}
+
+variable "report_memory_size" {
+  description = "Memory in MB for the daily report Lambda."
+  type        = number
+  default     = 256
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch Logs retention (days) for both Lambdas."
+  type        = number
+  default     = 30
+}
+
+variable "logs_kms_key_arn" {
+  description = "Optional KMS key ARN used to encrypt both Lambda log groups."
+  type        = string
+  default     = null
+}
+
+variable "sns_kms_master_key_id" {
+  description = <<-EOT
+    Optional KMS key id/ARN for server-side encryption of the SES events topic (and
+    the alert topic when `create_alert_topic` is true). Must be a customer managed
+    key whose policy allows `ses.amazonaws.com` to `kms:GenerateDataKey*` and
+    `kms:Decrypt`; the AWS managed `alias/aws/sns` key does not permit SES to publish.
+  EOT
+  type        = string
+  default     = null
+}
+
+# ---------------------------------------------------------------------------
+# Optional read-only consumer credentials
+# ---------------------------------------------------------------------------
+variable "create_metrics_reader_user" {
+  description = <<-EOT
+    Create an IAM user with read-only (Query/GetItem) access to the metrics table,
+    plus a long-lived access key, for a dashboard or another AWS account that
+    cannot assume a role. Long-lived keys are a security trade-off — prefer
+    `create_metrics_reader_role` where the consumer can assume a role.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "create_metrics_reader_role" {
+  description = <<-EOT
+    Create an IAM role with read-only (Query/GetItem) access to the metrics table
+    that the principals in `metrics_reader_principals` may assume. Preferred over
+    `create_metrics_reader_user` — no long-lived credentials.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "metrics_reader_principals" {
+  description = <<-EOT
+    IAM principal ARNs allowed to assume the metrics reader role, e.g.
+    ["arn:aws:iam::111122223333:role/dashboard"]. Required when
+    `create_metrics_reader_role` is true.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "metrics_reader_external_id" {
+  description = "Optional sts:ExternalId required when assuming the metrics reader role."
+  type        = string
+  default     = null
+  sensitive   = true
+}
