@@ -23,18 +23,17 @@ output "tables_region" {
   value       = local.region
 }
 
-output "alert_topic_arn" {
-  description = "SNS topic receiving alerts — the one supplied, the one created, or null when alerting is disabled."
-  value       = local.alert_topic_arn
-}
-
 output "configuration_set_name" {
   description = "Name of the SES configuration set created in the primary region."
   value       = module.primary_pipeline.configuration_set_name
 }
 
 output "events_topic_arn" {
-  description = "ARN of the SNS topic receiving raw SES events in the primary region."
+  description = <<-EOT
+    ARN of the SNS topic receiving raw SES events in the primary region. This is
+    the extension point for notifications: subscribe your own consumer here, with
+    an SNS message-body filter policy if you only want some event types.
+  EOT
   value       = module.primary_pipeline.events_topic_arn
 }
 

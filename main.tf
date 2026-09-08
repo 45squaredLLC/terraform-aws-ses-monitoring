@@ -87,23 +87,14 @@ resource "aws_dynamodb_table" "suppression" {
 }
 
 # ---------------------------------------------------------------------------
-# Optional alert topic
-# ---------------------------------------------------------------------------
-resource "aws_sns_topic" "alerts" {
-  count = local.create_alert_topic ? 1 : 0
-
-  name              = "${var.name_prefix}-alerts"
-  kms_master_key_id = var.sns_kms_master_key_id
-  tags              = var.tags
-}
-
-# ---------------------------------------------------------------------------
 # Primary-region capture pipeline
 # ---------------------------------------------------------------------------
 module "primary_pipeline" {
   source = "./modules/region-pipeline"
 
   name_prefix                      = var.name_prefix
+  configuration_set_name           = var.configuration_set_name
+  events_topic_name                = var.events_topic_name
   identities                       = var.identities
   attach_default_configuration_set = var.attach_default_configuration_set
   matching_event_types             = var.matching_event_types
@@ -114,9 +105,8 @@ module "primary_pipeline" {
   suppression_table_arn  = aws_dynamodb_table.suppression.arn
   tables_region          = local.region
 
-  alert_sns_topic_arn   = local.alert_topic_arn
-  alert_bounce_subtypes = var.alert_bounce_subtypes
-  metrics_ttl_days      = var.metrics_ttl_days
+  suppression_bounce_subtypes = var.suppression_bounce_subtypes
+  metrics_ttl_days            = var.metrics_ttl_days
 
   lambda_runtime        = var.lambda_runtime
   lambda_timeout        = var.processor_timeout

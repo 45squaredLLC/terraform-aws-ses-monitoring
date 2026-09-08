@@ -129,13 +129,11 @@ resource "aws_iam_role_policy" "processor" {
     Statement = concat(
       [
         {
-          Sid    = "WriteMetricsAndSuppressionList"
+          # Both writes are atomic UpdateItem upserts; nothing reads or replaces
+          # an item, so PutItem/GetItem are not granted.
+          Sid    = "UpdateMetricsAndSuppressionList"
           Effect = "Allow"
-          Action = [
-            "dynamodb:UpdateItem",
-            "dynamodb:PutItem",
-            "dynamodb:GetItem",
-          ]
+          Action = ["dynamodb:UpdateItem"]
           Resource = [
             var.metrics_table_arn,
             var.suppression_table_arn,
@@ -151,14 +149,6 @@ resource "aws_iam_role_policy" "processor" {
           Resource = "${aws_cloudwatch_log_group.processor.arn}:*"
         },
       ],
-      local.alerts_enabled ? [
-        {
-          Sid      = "PublishAlerts"
-          Effect   = "Allow"
-          Action   = "sns:Publish"
-          Resource = var.alert_sns_topic_arn
-        },
-      ] : [],
       var.kms_key_arn != null ? [
         {
           Sid      = "LogEncryption"
@@ -173,7 +163,7 @@ resource "aws_iam_role_policy" "processor" {
 
 resource "aws_lambda_function" "processor" {
   function_name    = local.processor_function_name
-  description      = "Aggregates SES events into DynamoDB and alerts on permanent bounces/complaints"
+  description      = "Aggregates SES events into per-identity DynamoDB counters and a suppression list"
   filename         = data.archive_file.processor.output_path
   source_code_hash = data.archive_file.processor.output_base64sha256
   role             = aws_iam_role.processor.arn
@@ -185,12 +175,11 @@ resource "aws_lambda_function" "processor" {
 
   environment {
     variables = {
-      METRICS_TABLE         = var.metrics_table_name
-      SUPPRESSION_TABLE     = var.suppression_table_name
-      TABLE_REGION          = var.tables_region
-      ALERT_TOPIC_ARN       = local.alerts_enabled ? var.alert_sns_topic_arn : ""
-      ALERT_BOUNCE_SUBTYPES = jsonencode(var.alert_bounce_subtypes)
-      METRICS_TTL_DAYS      = tostring(var.metrics_ttl_days)
+      METRICS_TABLE               = var.metrics_table_name
+      SUPPRESSION_TABLE           = var.suppression_table_name
+      TABLE_REGION                = var.tables_region
+      SUPPRESSION_BOUNCE_SUBTYPES = jsonencode(var.suppression_bounce_subtypes)
+      METRICS_TTL_DAYS            = tostring(var.metrics_ttl_days)
     }
   }
 

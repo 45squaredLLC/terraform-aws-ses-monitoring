@@ -10,7 +10,13 @@ variable "name_prefix" {
 }
 
 variable "configuration_set_name" {
-  description = "Name of the SES v2 configuration set created in this region. Defaults to name_prefix."
+  description = "Name of the SES v2 configuration set created in this region. Defaults to `name_prefix`."
+  type        = string
+  default     = null
+}
+
+variable "events_topic_name" {
+  description = "Name of the SES events SNS topic. Defaults to \"<name_prefix>-events-<region>\"."
   type        = string
   default     = null
 }
@@ -72,18 +78,12 @@ variable "tables_region" {
   type        = string
 }
 
-variable "alert_sns_topic_arn" {
+variable "suppression_bounce_subtypes" {
   description = <<-EOT
-    Optional SNS topic ARN that receives real-time alerts for permanent bounces
-    and complaints (e.g. a topic fronted by a Slack-forwarding Lambda). When null,
-    real-time alerting is disabled and events are only recorded in DynamoDB.
+    Bounce types recorded in the suppression table. Complaints are always
+    recorded. Transient bounces are excluded by default because they are usually
+    a full mailbox or a temporary server problem, not a bad address.
   EOT
-  type        = string
-  default     = null
-}
-
-variable "alert_bounce_subtypes" {
-  description = "Bounce types recorded to the suppression list and alerted on."
   type        = list(string)
   default     = ["Permanent"]
 }

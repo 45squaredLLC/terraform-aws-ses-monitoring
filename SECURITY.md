@@ -23,3 +23,5 @@ and SNS topics in your AWS account. A few things are worth knowing:
   names are passed via environment variables rather than interpolated into the
   shell command.
 - Lambda log output includes exception messages but not full event payloads.
+- Neither Lambda has `sns:Publish`. The only outbound message the module sends is
+  the digest email, from the address you configure.

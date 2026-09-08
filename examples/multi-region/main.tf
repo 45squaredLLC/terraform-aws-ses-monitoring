@@ -17,7 +17,7 @@ terraform {
 }
 
 provider "aws" {
-  region = "us-west-2"
+  region = var.primary_region
 }
 
 provider "aws" {
@@ -35,9 +35,6 @@ module "ses_monitoring" {
 
   report_from_address = "ses-reports@example.com"
   report_to_addresses = ["ops@example.com"]
-
-  # Reuse an existing alerting topic (e.g. one fronted by a Slack forwarder).
-  alert_sns_topic_arn = var.alert_sns_topic_arn
 
   tags = {
     Project = "ses-monitoring"
@@ -60,8 +57,6 @@ module "ses_monitoring_us_east_1" {
   suppression_table_name = module.ses_monitoring.suppression_table_name
   suppression_table_arn  = module.ses_monitoring.suppression_table_arn
   tables_region          = module.ses_monitoring.tables_region
-
-  alert_sns_topic_arn = module.ses_monitoring.alert_topic_arn
 
   tags = {
     Project = "ses-monitoring"

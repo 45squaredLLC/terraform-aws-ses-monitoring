@@ -51,19 +51,22 @@ resource "aws_iam_role_policy" "report" {
     Statement = concat(
       [
         {
-          Sid    = "ReadMetricsAndSuppressionList"
+          # The report only ever queries the metrics table through date-index.
+          Sid    = "QueryMetrics"
           Effect = "Allow"
-          Action = [
-            "dynamodb:Query",
-            "dynamodb:GetItem",
-            "dynamodb:Scan",
-          ]
+          Action = ["dynamodb:Query"]
           Resource = [
             aws_dynamodb_table.metrics.arn,
             "${aws_dynamodb_table.metrics.arn}/index/*",
-            aws_dynamodb_table.suppression.arn,
-            "${aws_dynamodb_table.suppression.arn}/index/*",
           ]
+        },
+        {
+          # The suppression table is scanned: recent additions are not indexed
+          # by time, so there is no key condition to query on.
+          Sid      = "ScanSuppressionList"
+          Effect   = "Allow"
+          Action   = ["dynamodb:Scan"]
+          Resource = [aws_dynamodb_table.suppression.arn]
         },
         {
           # Scoped to identities in this account, and to the configured sender.
@@ -82,14 +85,6 @@ resource "aws_iam_role_policy" "report" {
           Resource = "${aws_cloudwatch_log_group.report[0].arn}:*"
         },
       ],
-      local.alerts_enabled ? [
-        {
-          Sid      = "PublishSummary"
-          Effect   = "Allow"
-          Action   = "sns:Publish"
-          Resource = local.alert_topic_arn
-        },
-      ] : [],
       var.logs_kms_key_arn != null ? [
         {
           Sid      = "LogEncryption"
@@ -120,7 +115,6 @@ resource "aws_lambda_function" "report" {
     variables = {
       METRICS_TABLE       = aws_dynamodb_table.metrics.name
       SUPPRESSION_TABLE   = aws_dynamodb_table.suppression.name
-      ALERT_TOPIC_ARN     = local.alerts_enabled ? local.alert_topic_arn : ""
       REPORT_FROM         = var.report_from_address
       REPORT_TO           = join(",", var.report_to_addresses)
       BOUNCE_THRESHOLD    = tostring(var.bounce_threshold)

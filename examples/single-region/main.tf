@@ -27,17 +27,15 @@ module "ses_monitoring" {
   report_from_address = "ses-reports@example.com"
   report_to_addresses = ["ops@example.com"]
 
-  # Create an SNS topic for real-time bounce/complaint alerts and subscribe to it
-  # yourself (email, a Slack forwarder Lambda, PagerDuty, ...).
-  create_alert_topic = true
-
   tags = {
     Project = "ses-monitoring"
   }
 }
 
-output "alert_topic_arn" {
-  value = module.ses_monitoring.alert_topic_arn
+# The extension point for your own notifications: subscribe a consumer to this
+# topic, optionally with a message-body filter policy for Bounce/Complaint only.
+output "events_topic_arn" {
+  value = module.ses_monitoring.events_topic_arn
 }
 
 output "metrics_table_name" {

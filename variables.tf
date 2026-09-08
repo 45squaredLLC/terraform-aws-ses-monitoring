@@ -18,6 +18,18 @@ variable "tags" {
   default     = {}
 }
 
+variable "configuration_set_name" {
+  description = "Name of the SES configuration set. Defaults to `name_prefix`."
+  type        = string
+  default     = null
+}
+
+variable "events_topic_name" {
+  description = "Name of the SES events SNS topic. Defaults to \"<name_prefix>-events-<region>\"."
+  type        = string
+  default     = null
+}
+
 # ---------------------------------------------------------------------------
 # Identities
 # ---------------------------------------------------------------------------
@@ -109,31 +121,14 @@ variable "dynamodb_kms_key_arn" {
 }
 
 # ---------------------------------------------------------------------------
-# Alerting
+# Suppression list
 # ---------------------------------------------------------------------------
-variable "alert_sns_topic_arn" {
+variable "suppression_bounce_subtypes" {
   description = <<-EOT
-    Existing SNS topic ARN that receives real-time bounce/complaint alerts and the
-    daily "over threshold" summary — for example a topic fronted by a
-    Slack-forwarding Lambda. Leave null to create a topic (see
-    `create_alert_topic`) or to disable alerting entirely.
+    Bounce types recorded in the suppression table. Complaints are always
+    recorded. Transient bounces are excluded by default because they are usually
+    a full mailbox or a temporary server problem, not a bad address.
   EOT
-  type        = string
-  default     = null
-}
-
-variable "create_alert_topic" {
-  description = <<-EOT
-    Create an SNS alert topic instead of supplying `alert_sns_topic_arn`. Subscribe
-    your own endpoints (email, Slack forwarder, PagerDuty…) to
-    `output.alert_topic_arn`. Ignored when `alert_sns_topic_arn` is set.
-  EOT
-  type        = bool
-  default     = false
-}
-
-variable "alert_bounce_subtypes" {
-  description = "Bounce types recorded to the suppression list and alerted on in real time."
   type        = list(string)
   default     = ["Permanent"]
 }
@@ -237,10 +232,10 @@ variable "logs_kms_key_arn" {
 
 variable "sns_kms_master_key_id" {
   description = <<-EOT
-    Optional KMS key id/ARN for server-side encryption of the SES events topic (and
-    the alert topic when `create_alert_topic` is true). Must be a customer managed
-    key whose policy allows `ses.amazonaws.com` to `kms:GenerateDataKey*` and
-    `kms:Decrypt`; the AWS managed `alias/aws/sns` key does not permit SES to publish.
+    Optional KMS key id/ARN for server-side encryption of the SES events topic.
+    Must be a customer managed key whose policy allows `ses.amazonaws.com` to
+    `kms:GenerateDataKey*` and `kms:Decrypt`; the AWS managed `alias/aws/sns` key
+    does not permit SES to publish.
   EOT
   type        = string
   default     = null

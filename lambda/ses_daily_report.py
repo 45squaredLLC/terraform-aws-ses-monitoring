@@ -4,8 +4,7 @@ Triggered once a day by EventBridge. Reads the previous UTC day's per-identity
 counters from the metrics table (via the `date-index` GSI), computes per-identity
 bounce and complaint rates, flags identities over the configured thresholds,
 lists addresses added to the suppression list in the last 24 hours, and emails an
-HTML digest via SES. When any identity is flagged and an alert topic is
-configured, it also publishes a summary to that topic.
+HTML digest via SES.
 """
 
 import datetime
@@ -18,7 +17,6 @@ from boto3.dynamodb.conditions import Attr, Key
 
 METRICS_TABLE = os.environ["METRICS_TABLE"]
 SUPPRESSION_TABLE = os.environ["SUPPRESSION_TABLE"]
-ALERT_TOPIC_ARN = os.environ.get("ALERT_TOPIC_ARN", "")
 REPORT_FROM = os.environ["REPORT_FROM"]
 REPORT_TO = [a.strip() for a in os.environ["REPORT_TO"].split(",") if a.strip()]
 
@@ -30,7 +28,6 @@ _dynamodb = boto3.resource("dynamodb")
 _metrics = _dynamodb.Table(METRICS_TABLE)
 _suppression = _dynamodb.Table(SUPPRESSION_TABLE)
 _ses = boto3.client("ses")
-_sns = boto3.client("sns") if ALERT_TOPIC_ARN else None
 
 
 def _i(value):
@@ -183,19 +180,6 @@ def lambda_handler(event, context):
         )
     else:
         print(f"No metrics for {yesterday}; skipping email.")
-
-    if flagged and _sns:
-        lines = "\n".join(
-            f"- {r['identity']}: bounce {r['bounce_rate'] * 100:.2f}% "
-            f"({r['bounces']}/{r['deliveries'] + r['bounces']}), "
-            f"complaint {r['complaint_rate'] * 100:.3f}% ({r['complaints']})"
-            for r in flagged
-        )
-        _sns.publish(
-            TopicArn=ALERT_TOPIC_ARN,
-            Subject=f"SES report {yesterday}: {len(flagged)} identity(ies) over threshold"[:100],
-            Message=f"*SES daily report {yesterday}* - identities over threshold:\n{lines}",
-        )
 
     return {
         "date": yesterday,

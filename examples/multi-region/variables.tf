@@ -1,5 +1,5 @@
-variable "alert_sns_topic_arn" {
-  description = "Existing SNS topic ARN for real-time alerts."
+variable "primary_region" {
+  description = "Region owning the DynamoDB tables and the daily report."
   type        = string
-  default     = null
+  default     = "us-west-2"
 }

@@ -1,14 +1,16 @@
 # terraform-aws-ses-monitoring
 
 Per-identity Amazon SES bounce and complaint monitoring — event-driven, with a
-daily digest and real-time alerts. **No CloudWatch alarms**: the pipeline is SES
-configuration set → SNS → Lambda → DynamoDB.
+daily digest. **No CloudWatch alarms**: the pipeline is SES configuration set →
+SNS → Lambda → DynamoDB.
 
 If you send from more than a handful of SES identities, the console gives you one
 account-wide reputation number and nothing per identity. A single bad list on one
 domain can put the whole account into probation or a sending pause. This module
-gives you per-identity daily counters, an alert the moment a permanent bounce or
-complaint lands, and a record of every address that bounced or complained.
+gives you per-identity daily counters, a record of every address that bounced or
+complained, and a daily digest. Notifications are deliberately **not** included:
+the module exposes the SES events SNS topic and you bolt your own notifier onto
+it — see [Notifications](#notifications).
 
 ## What it builds
 
@@ -16,16 +18,16 @@ complaint lands, and a record of every address that bounced or complained.
 SES identity (default configuration set = this module's)
    │  SEND / DELIVERY / BOUNCE / COMPLAINT / REJECT / DELIVERY_DELAY
    ▼
-SNS <prefix>-events-<region> ──▶ Lambda <prefix>-event-processor-<region>
-                                   ├─ ADD counters → DynamoDB <prefix>-event-metrics
-                                   ├─ permanent bounce / complaint → DynamoDB <prefix>-suppression-list
-                                   └─ permanent bounce / complaint → alert topic (optional)
+SNS <prefix>-events-<region> ──┬▶ Lambda <prefix>-event-processor-<region>
+                               │    ├─ ADD counters → DynamoDB <prefix>-event-metrics
+                               │    └─ permanent bounce / complaint → DynamoDB <prefix>-suppression-list
+                               │
+                               └▶ your own notifier (bolt-on, not part of this module)
 
 EventBridge (daily) ───────────▶ Lambda <prefix>-daily-report
                                    ├─ read yesterday's counters via the date-index GSI
                                    ├─ compute per-identity bounce % / complaint %
-                                   ├─ SES SendEmail HTML digest
-                                   └─ any identity over threshold → alert topic (optional)
+                                   └─ SES SendEmail HTML digest
 ```
 
 Attaching the configuration set as each identity's **default** means existing
@@ -44,14 +46,8 @@ module "ses_monitoring" {
 
   report_from_address = "ses-reports@example.com"
   report_to_addresses = ["ops@example.com"]
-
-  create_alert_topic = true
 }
 ```
-
-Then subscribe whatever you use for alerting to `module.ses_monitoring.alert_topic_arn`
-— an email address, a Slack-forwarding Lambda, PagerDuty. If you already have such
-a topic, pass `alert_sns_topic_arn` instead and leave `create_alert_topic` false.
 
 Runnable examples: [`examples/single-region`](examples/single-region),
 [`examples/multi-region`](examples/multi-region).
@@ -74,9 +70,35 @@ module "ses_monitoring_us_east_1" {
   suppression_table_name = module.ses_monitoring.suppression_table_name
   suppression_table_arn  = module.ses_monitoring.suppression_table_arn
   tables_region          = module.ses_monitoring.tables_region
-  alert_sns_topic_arn    = module.ses_monitoring.alert_topic_arn
 }
 ```
+
+## Notifications
+
+Alerting is out of scope on purpose. Every shop routes alerts differently — Slack,
+PagerDuty, Opsgenie, plain email — and baking one in means either a Slack-shaped
+module or a pile of options nobody wants. Instead the module hands you
+`events_topic_arn`, the SNS topic carrying raw SES events, and you subscribe your
+own consumer.
+
+SNS message-body filter policies narrow the subscription without any code:
+
+```hcl
+resource "aws_sns_topic_subscription" "bounce_notifier" {
+  topic_arn = module.ses_monitoring.events_topic_arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.my_notifier.arn
+
+  filter_policy_scope = "MessageBody"
+  filter_policy = jsonencode({
+    eventType = ["Bounce", "Complaint"]
+  })
+}
+```
+
+Your function then receives only bounce and complaint events, formats them
+however you like, and sends them wherever you like. The processor Lambda keeps
+recording every event regardless of what you subscribe.
 
 ## Requirements
 
@@ -120,9 +142,8 @@ The daily report flags an identity at the AWS danger levels:
 - **bounce rate ≥ 5%** — `bounces / (deliveries + bounces)`
 - **complaint rate ≥ 0.1%** — `complaints / deliveries`
 
-Tune with `bounce_threshold` / `complaint_threshold`. Real-time alerts fire on
-every complaint and on the bounce types in `alert_bounce_subtypes` (default
-`["Permanent"]`).
+Tune with `bounce_threshold` / `complaint_threshold`. These affect the digest
+only — nothing is enforced or blocked on your behalf.
 
 ## Inputs
 
@@ -131,9 +152,12 @@ every complaint and on the bounce types in `alert_bounce_subtypes` (default
 | Name | Description | Type | Default |
 |------|-------------|------|---------|
 | `identities` | Verified SES identities in the primary region to capture | `list(string)` | `[]` |
+| `suppression_bounce_subtypes` | Bounce types recorded in the suppression table | `list(string)` | `["Permanent"]` |
 | `attach_default_configuration_set` | Set the configuration set as each identity's default via the AWS CLI | `bool` | `true` |
 | `matching_event_types` | SES event types delivered to the pipeline | `list(string)` | all six |
 | `name_prefix` | Prefix for every resource name | `string` | `"ses-monitoring"` |
+| `configuration_set_name` | Override the configuration set name | `string` | `name_prefix` |
+| `events_topic_name` | Override the events topic name | `string` | `"<name_prefix>-events-<region>"` |
 | `tags` | Tags applied to every taggable resource | `map(string)` | `{}` |
 
 ### Storage
@@ -147,17 +171,6 @@ every complaint and on the bounce types in `alert_bounce_subtypes` (default
 | `dynamodb_point_in_time_recovery` | Enable PITR on both tables | `bool` | `true` |
 | `dynamodb_deletion_protection` | Enable deletion protection | `bool` | `false` |
 | `dynamodb_kms_key_arn` | Customer managed key for encryption at rest | `string` | `null` |
-
-### Alerting
-
-| Name | Description | Type | Default |
-|------|-------------|------|---------|
-| `alert_sns_topic_arn` | Existing topic for real-time alerts | `string` | `null` |
-| `create_alert_topic` | Create an alert topic instead | `bool` | `false` |
-| `alert_bounce_subtypes` | Bounce types recorded and alerted on | `list(string)` | `["Permanent"]` |
-
-Leaving both `alert_sns_topic_arn` and `create_alert_topic` unset disables
-alerting; events are still recorded in DynamoDB.
 
 ### Daily report
 
@@ -182,7 +195,7 @@ alerting; events are still recorded in DynamoDB.
 | `report_timeout` / `report_memory_size` | Daily report sizing | `number` | `120` / `256` |
 | `log_retention_days` | CloudWatch Logs retention | `number` | `30` |
 | `logs_kms_key_arn` | Customer managed key for the log groups | `string` | `null` |
-| `sns_kms_master_key_id` | Customer managed key for the SNS topics | `string` | `null` |
+| `sns_kms_master_key_id` | Customer managed key for the events topic | `string` | `null` |
 
 `sns_kms_master_key_id` must be a **customer managed** key whose policy allows
 `ses.amazonaws.com` to `kms:GenerateDataKey*` and `kms:Decrypt`. The AWS managed
@@ -205,9 +218,8 @@ events if you use it.
 | `metrics_table_name` / `metrics_table_arn` | Metrics table |
 | `suppression_table_name` / `suppression_table_arn` | Suppression table |
 | `tables_region` | Region the tables live in — pass to `region-pipeline` |
-| `alert_topic_arn` | Alert topic in use, or `null` |
 | `configuration_set_name` | Configuration set in the primary region |
-| `events_topic_arn` | Raw SES events topic in the primary region |
+| `events_topic_arn` | Raw SES events topic — subscribe your own notifier here |
 | `processor_function_name` / `processor_function_arn` | Event processor Lambda |
 | `daily_report_function_name` / `daily_report_function_arn` | Digest Lambda, or `null` |
 | `metrics_reader_role_arn` | Reader role, or `null` |
@@ -216,13 +228,18 @@ events if you use it.
 
 ## Security notes
 
-- IAM is least-privilege throughout: the processor may only `UpdateItem` /
-  `PutItem` / `GetItem` on the two tables and publish to the alert topic; the
-  report may only read those tables and send mail **from `report_from_address`**;
-  both write only to their own log group.
+- IAM is least-privilege throughout. The processor holds exactly
+  `dynamodb:UpdateItem` on the two tables — both of its writes are atomic upserts,
+  so it needs neither `PutItem` nor `GetItem`. The report holds `dynamodb:Query`
+  on the metrics table and its indexes, `dynamodb:Scan` on the suppression table
+  only (the metrics table is never scanned), and `ses:SendEmail` restricted to
+  identities in your account with a `ses:FromAddress` condition pinning the
+  sender. Each function can write only to its own log group.
 - The SES events topic accepts publishes only from `ses.amazonaws.com` in your
   own account (`AWS:SourceAccount` condition), and both Lambda trust policies
-  carry an `aws:SourceAccount` condition.
+  carry an `aws:SourceAccount` condition so they cannot be assumed cross-account.
+- Neither Lambda is granted `sns:Publish` — they do not send anything outbound
+  except the report email.
 - `create_metrics_reader_user` produces a long-lived access key whose secret is
   stored **in plaintext in Terraform state**. Use `create_metrics_reader_role`
   unless the consumer genuinely cannot assume a role, and rotate keys you do

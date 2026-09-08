@@ -6,8 +6,11 @@ destination (SEND / DELIVERY / BOUNCE / COMPLAINT / REJECT / DELIVERY_DELAY).
 For every event it increments a per-identity, per-day counter in the metrics
 DynamoDB table. For the configured bounce subtypes (permanent bounces by
 default) and for complaints it also records the offending address in the
-suppression table and, when an alert topic is configured, publishes a
-real-time alert.
+suppression table.
+
+Notifications are deliberately not part of this function. Subscribe your own
+consumer to the SES events SNS topic instead — SNS message-body filter policies
+can narrow the subscription to the event types you care about.
 
 The DynamoDB tables live in a single region; this Lambda may run in another
 region and write cross-region, so every client is pinned to an explicit region
@@ -24,18 +27,16 @@ METRICS_TABLE = os.environ["METRICS_TABLE"]
 SUPPRESSION_TABLE = os.environ["SUPPRESSION_TABLE"]
 SOURCE_REGION = os.environ.get("AWS_REGION", "")
 TABLE_REGION = os.environ.get("TABLE_REGION") or SOURCE_REGION
-ALERT_TOPIC_ARN = os.environ.get("ALERT_TOPIC_ARN", "")
-ALERT_REGION = ALERT_TOPIC_ARN.split(":")[3] if ALERT_TOPIC_ARN else SOURCE_REGION
-
-# Bounce subtypes recorded to the suppression list and alerted on.
-ALERT_BOUNCE_SUBTYPES = set(json.loads(os.environ.get("ALERT_BOUNCE_SUBTYPES") or '["Permanent"]'))
+# Bounce subtypes recorded in the suppression table.
+SUPPRESSION_BOUNCE_SUBTYPES = set(
+    json.loads(os.environ.get("SUPPRESSION_BOUNCE_SUBTYPES") or '["Permanent"]')
+)
 # Retain raw daily counters for this many days (DynamoDB TTL).
 METRICS_TTL_DAYS = int(os.environ.get("METRICS_TTL_DAYS") or "90")
 
 _dynamodb = boto3.resource("dynamodb", region_name=TABLE_REGION)
 _metrics = _dynamodb.Table(METRICS_TABLE)
 _suppression = _dynamodb.Table(SUPPRESSION_TABLE)
-_sns = boto3.client("sns", region_name=ALERT_REGION) if ALERT_TOPIC_ARN else None
 
 # Map an SES eventType to the counter attribute it increments.
 _EVENT_COUNTER = {
@@ -115,15 +116,9 @@ def _record_suppression(email, identity, reason, subtype, diagnostic):
     )
 
 
-def _alert(subject, message):
-    if not _sns:
-        return
-    _sns.publish(TopicArn=ALERT_TOPIC_ARN, Subject=subject[:100], Message=message)
-
-
 def _handle_bounce(identity, bounce):
     subtype = bounce.get("bounceType")  # Permanent / Transient / Undetermined
-    if subtype not in ALERT_BOUNCE_SUBTYPES:
+    if subtype not in SUPPRESSION_BOUNCE_SUBTYPES:
         return
     for recipient in bounce.get("bouncedRecipients", []):
         email = recipient.get("emailAddress")
@@ -131,14 +126,6 @@ def _handle_bounce(identity, bounce):
             continue
         diagnostic = recipient.get("diagnosticCode")
         _record_suppression(email, identity, "Bounce", subtype, diagnostic)
-        _alert(
-            f"SES {subtype} bounce: {identity}",
-            f"*{subtype} bounce* on identity *{identity}*\n"
-            f"Address: `{email}`\n"
-            f"Subtype: {bounce.get('bounceSubType', 'n/a')}\n"
-            f"Diagnostic: {diagnostic or 'n/a'}\n"
-            f"Recorded in {SUPPRESSION_TABLE}.",
-        )
 
 
 def _handle_complaint(identity, complaint):
@@ -148,13 +135,6 @@ def _handle_complaint(identity, complaint):
             continue
         feedback_type = complaint.get("complaintFeedbackType", "n/a")
         _record_suppression(email, identity, "Complaint", feedback_type, None)
-        _alert(
-            f"SES complaint: {identity}",
-            f"*Complaint* on identity *{identity}*\n"
-            f"Address: `{email}`\n"
-            f"Feedback type: {feedback_type}\n"
-            f"Recorded in {SUPPRESSION_TABLE}.",
-        )
 
 
 def _process_event(notification):
