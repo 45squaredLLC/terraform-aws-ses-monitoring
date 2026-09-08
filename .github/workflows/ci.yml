@@ -10,14 +10,20 @@ permissions:
 
 jobs:
   terraform:
-    name: Terraform
+    name: Terraform ${{ matrix.terraform }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest supported and current, so version-specific behaviour (sensitive
+        # values in for_each, deprecations) is caught before release.
+        terraform: ["1.9.8", "latest"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
 
       - name: Format

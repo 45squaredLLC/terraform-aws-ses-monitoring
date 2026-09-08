@@ -276,8 +276,13 @@ variable "metrics_reader_principals" {
 }
 
 variable "metrics_reader_external_id" {
-  description = "Optional sts:ExternalId required when assuming the metrics reader role."
+  description = <<-EOT
+    Optional `sts:ExternalId` required when assuming the metrics reader role. It
+    is deliberately not marked sensitive: it is an anti-confused-deputy
+    identifier rather than a credential, it is readable in the role's trust
+    policy anyway, and marking it sensitive makes it unusable in the `for_each`
+    that builds the trust policy condition on Terraform < 1.14.
+  EOT
   type        = string
   default     = null
-  sensitive   = true
 }

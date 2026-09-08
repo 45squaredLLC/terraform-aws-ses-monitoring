@@ -3,6 +3,20 @@
 All notable changes to this module are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-09-08
+
+### Fixed
+
+- `metrics_reader_external_id` is no longer marked sensitive. On Terraform
+  before 1.14 a sensitive value cannot be used in `for_each`, so
+  `create_metrics_reader_role = true` combined with an external id failed to
+  validate. The value is an anti-confused-deputy identifier rather than a
+  credential and is readable in the role's trust policy regardless.
+
+### Changed
+
+- CI validates against both the oldest supported Terraform (1.9.8) and latest.
+
 ## [1.0.0] - 2026-09-08
 
 Initial public release.
