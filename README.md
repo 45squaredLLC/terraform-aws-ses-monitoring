@@ -14,7 +14,9 @@ it — see [Notifications](#notifications).
 
 ## What it builds
 
-An editable diagram lives at [`docs/architecture.drawio`](docs/architecture.drawio)
+![Architecture](docs/architecture.png)
+
+The editable source is [`docs/architecture.drawio`](docs/architecture.drawio)
 (open at [app.diagrams.net](https://app.diagrams.net)).
 
 ```
