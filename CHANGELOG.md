@@ -5,6 +5,10 @@ All notable changes to this module are documented here. This project adheres to
 
 ## [1.1.0] - 2026-10-26
 
+The repository moved to `45squaredLLC/terraform-aws-ses-monitoring` (from
+`avansledright/terraform-module-ses-monitoring`; GitHub redirects the old URL,
+but update `source` to the new one).
+
 ### Added
 
 - `attach_role_arn`: a role the AWS CLI assumes before attaching the

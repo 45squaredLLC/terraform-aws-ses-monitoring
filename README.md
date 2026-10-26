@@ -42,7 +42,7 @@ senders are captured with no application change.
 
 ```hcl
 module "ses_monitoring" {
-  source = "github.com/avansledright/terraform-module-ses-monitoring?ref=v1.0.0"
+  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring?ref=v1.1.0"
 
   identities = [
     "example.com",
@@ -64,7 +64,7 @@ region gets a `modules/region-pipeline` instance writing into the same tables:
 
 ```hcl
 module "ses_monitoring_us_east_1" {
-  source = "github.com/avansledright/terraform-module-ses-monitoring//modules/region-pipeline?ref=v1.0.0"
+  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring//modules/region-pipeline?ref=v1.1.0"
 
   providers = { aws = aws.us_east_1 }
 
@@ -140,7 +140,7 @@ alone.
 
 ```hcl
 module "ses_monitoring" {
-  source = "github.com/avansledright/terraform-module-ses-monitoring?ref=v1.1.0"
+  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring?ref=v1.1.0"
 
   providers = { aws = aws.member }
 
