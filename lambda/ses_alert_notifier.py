@@ -57,15 +57,17 @@ def _publish(title, lines):
     if MESSAGE_FORMAT == "text":
         _sns.publish(TopicArn=ALERT_TOPIC_ARN, Subject=title[:99], Message="\n".join(lines))
         return
-    body = json.dumps({
-        "version": "1.0",
-        "source": "custom",
-        "content": {
-            "textType": "client-markdown",
-            "title": f":rotating_light: {title}"[:250],
-            "description": "\n".join(lines)[:8000],
-        },
-    })
+    body = json.dumps(
+        {
+            "version": "1.0",
+            "source": "custom",
+            "content": {
+                "textType": "client-markdown",
+                "title": f":rotating_light: {title}"[:250],
+                "description": "\n".join(lines)[:8000],
+            },
+        }
+    )
     _sns.publish(TopicArn=ALERT_TOPIC_ARN, Message=body)
 
 
