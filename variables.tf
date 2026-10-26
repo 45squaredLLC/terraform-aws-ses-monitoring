@@ -56,6 +56,29 @@ variable "attach_default_configuration_set" {
   default     = true
 }
 
+variable "attach_role_arn" {
+  description = <<-EOT
+    IAM role the AWS CLI assumes before attaching the configuration set to
+    `identities`. The CLI uses the credentials of the machine running Terraform,
+    not the provider's `assume_role`, so set this when the provider targets
+    another account (e.g. its OrganizationAccountAccessRole). Null uses the
+    ambient credentials.
+  EOT
+  type        = string
+  default     = null
+}
+
+variable "additional_configuration_sets" {
+  description = <<-EOT
+    Existing configuration sets in the primary region that should also feed the
+    pipeline. Each gets one extra SNS event destination; its existing
+    destinations are untouched. Needed when senders pass their own
+    `ConfigurationSetName`, which overrides an identity's default.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "matching_event_types" {
   description = "SES event types delivered to the pipeline."
   type        = list(string)

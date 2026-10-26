@@ -74,8 +74,17 @@ resource "null_resource" "attach_configuration_set" {
       SES_IDENTITY     = each.value
       SES_CONFIG_SET   = local.configuration_set_name
       SES_REGION       = local.region
+      SES_ROLE_ARN     = var.attach_role_arn == null ? "" : var.attach_role_arn
     }
     command = <<-EOT
+      set -e
+      if [ -n "$SES_ROLE_ARN" ]; then
+        set -- $(aws sts assume-role --role-arn "$SES_ROLE_ARN" \
+          --role-session-name ses-monitoring-attach \
+          --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text)
+        export AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" AWS_SESSION_TOKEN="$3"
+        unset AWS_PROFILE
+      fi
       aws sesv2 put-email-identity-configuration-set-attributes \
         --email-identity "$SES_IDENTITY" \
         --configuration-set-name "$SES_CONFIG_SET" \
@@ -84,6 +93,32 @@ resource "null_resource" "attach_configuration_set" {
   }
 
   depends_on = [aws_sesv2_configuration_set_event_destination.sns]
+}
+
+# ---------------------------------------------------------------------------
+# Extra destination on existing configuration sets
+#
+# A sender that names a configuration set bypasses the identity's default, so
+# its events would never reach the pipeline. These sets get one more SNS
+# destination pointing at the events topic; their own destinations stay as
+# they are. The topic policy already admits SES from this account.
+# ---------------------------------------------------------------------------
+resource "aws_sesv2_configuration_set_event_destination" "additional" {
+  for_each = toset(var.additional_configuration_sets)
+
+  configuration_set_name = each.value
+  event_destination_name = "${local.configuration_set_name}-sns"
+
+  event_destination {
+    enabled              = true
+    matching_event_types = var.matching_event_types
+
+    sns_destination {
+      topic_arn = aws_sns_topic.events.arn
+    }
+  }
+
+  depends_on = [aws_sns_topic_policy.events]
 }
 
 # ---------------------------------------------------------------------------

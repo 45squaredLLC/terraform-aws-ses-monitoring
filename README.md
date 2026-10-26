@@ -127,6 +127,34 @@ calls `aws sesv2 put-email-identity-configuration-set-attributes` through a
 yourself — e.g. via `aws_sesv2_email_identity.configuration_set_name` on
 identities you do manage in Terraform.
 
+**Another account.** The CLI runs with the credentials of the machine running
+Terraform, not with the provider's `assume_role`. When the provider targets a
+different account, set `attach_role_arn` to a role in that account (for example
+its `OrganizationAccountAccessRole`), or the attachment lands in the wrong one.
+
+**Senders that name their own configuration set.** A `ConfigurationSetName` on
+the send overrides the identity's default, so those events never reach the
+pipeline. List such sets in `additional_configuration_sets`: each gets one more
+SNS destination pointing at the pipeline, and its existing destinations are left
+alone.
+
+```hcl
+module "ses_monitoring" {
+  source = "github.com/avansledright/terraform-module-ses-monitoring?ref=v1.1.0"
+
+  providers = { aws = aws.member }
+
+  identities      = ["example.com"]
+  attach_role_arn = "arn:aws:iam::111122223333:role/OrganizationAccountAccessRole"
+
+  # The app sends with ConfigurationSetName = "app-mail".
+  additional_configuration_sets = ["app-mail"]
+
+  report_from_address = "reports@example.com"
+  report_to_addresses = ["ops@example.com"]
+}
+```
+
 ## Data model
 
 **Metrics table** — `identity` (HASH) / `date` `YYYY-MM-DD` (RANGE). Counters
@@ -159,6 +187,8 @@ only — nothing is enforced or blocked on your behalf.
 | `identities` | Verified SES identities in the primary region to capture | `list(string)` | `[]` |
 | `suppression_bounce_subtypes` | Bounce types recorded in the suppression table | `list(string)` | `["Permanent"]` |
 | `attach_default_configuration_set` | Set the configuration set as each identity's default via the AWS CLI | `bool` | `true` |
+| `attach_role_arn` | Role the AWS CLI assumes for that attachment (cross-account) | `string` | `null` |
+| `additional_configuration_sets` | Existing configuration sets that also get an SNS destination to the pipeline | `list(string)` | `[]` |
 | `matching_event_types` | SES event types delivered to the pipeline | `list(string)` | all six |
 | `name_prefix` | Prefix for every resource name | `string` | `"ses-monitoring"` |
 | `configuration_set_name` | Override the configuration set name | `string` | `name_prefix` |
