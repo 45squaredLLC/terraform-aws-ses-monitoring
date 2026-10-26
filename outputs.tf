@@ -81,3 +81,13 @@ output "metrics_reader_secret_access_key" {
   value       = var.create_metrics_reader_user ? aws_iam_access_key.metrics_reader[0].secret : null
   sensitive   = true
 }
+
+output "alert_notifier_function_arn" {
+  description = "ARN of the alert notifier Lambda (null unless alert_topic_arn is set). Subscribe it to additional regions' events topics."
+  value       = local.alert_enabled ? aws_lambda_function.alert[0].arn : null
+}
+
+output "alert_notifier_role_arn" {
+  description = "ARN of the alert notifier's role, for the alert topic's policy (null unless alert_topic_arn is set)."
+  value       = local.alert_enabled ? aws_iam_role.alert[0].arn : null
+}
