@@ -3,6 +3,30 @@
 All notable changes to this module are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-26
+
+### Added
+
+- `attach_role_arn`: a role the AWS CLI assumes before attaching the
+  configuration set to `identities`. The CLI step used the ambient credentials,
+  so with a provider that assumes a role into another account the attachment
+  went to the wrong account. Null keeps the old behaviour.
+- `additional_configuration_sets`: existing configuration sets that should also
+  feed the pipeline. Each gets one extra SNS event destination
+  (`<configuration_set_name>-sns`); its own destinations are untouched. For
+  senders that pass `ConfigurationSetName`, which overrides an identity's
+  default.
+
+### Fixed
+
+- The daily report now names the module's configuration set on its send. It
+  used to inherit the From identity's default set; when that default was some
+  other set, SES refused the send (the policy only covers the module's set).
+  Its own sends are now counted by the pipeline too. Upgrading redeploys the
+  report Lambda.
+
+The two new inputs default to the previous behaviour.
+
 ## [1.0.2] - 2026-09-08
 
 ### Fixed
