@@ -127,6 +127,7 @@ resource "aws_lambda_function" "report" {
       REPORT_TO           = join(",", var.report_to_addresses)
       BOUNCE_THRESHOLD    = tostring(var.bounce_threshold)
       COMPLAINT_THRESHOLD = tostring(var.complaint_threshold)
+      CONFIGURATION_SET   = module.primary_pipeline.configuration_set_name
     }
   }
 

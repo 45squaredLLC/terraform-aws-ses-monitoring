@@ -19,6 +19,9 @@ METRICS_TABLE = os.environ["METRICS_TABLE"]
 SUPPRESSION_TABLE = os.environ["SUPPRESSION_TABLE"]
 REPORT_FROM = os.environ["REPORT_FROM"]
 REPORT_TO = [a.strip() for a in os.environ["REPORT_TO"].split(",") if a.strip()]
+# Named on the send so SES authorises it against this set, not whatever default
+# the From identity happens to carry (the IAM policy covers only this set).
+CONFIGURATION_SET = os.environ.get("CONFIGURATION_SET") or None
 
 # AWS danger thresholds: bounce >= 5%, complaint >= 0.1%.
 BOUNCE_THRESHOLD = float(os.environ.get("BOUNCE_THRESHOLD") or "0.05")
@@ -170,14 +173,17 @@ def lambda_handler(event, context):
     )
 
     if rows:
-        _ses.send_email(
-            Source=REPORT_FROM,
-            Destination={"ToAddresses": REPORT_TO},
-            Message={
+        send_args = {
+            "Source": REPORT_FROM,
+            "Destination": {"ToAddresses": REPORT_TO},
+            "Message": {
                 "Subject": {"Data": subject},
                 "Body": {"Html": {"Data": _build_html(yesterday, rows, flagged, new_blocks)}},
             },
-        )
+        }
+        if CONFIGURATION_SET:
+            send_args["ConfigurationSetName"] = CONFIGURATION_SET
+        _ses.send_email(**send_args)
     else:
         print(f"No metrics for {yesterday}; skipping email.")
 

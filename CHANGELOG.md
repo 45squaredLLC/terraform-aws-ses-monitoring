@@ -17,7 +17,15 @@ All notable changes to this module are documented here. This project adheres to
   senders that pass `ConfigurationSetName`, which overrides an identity's
   default.
 
-Both default to the previous behaviour; upgrading from 1.0.2 changes nothing.
+### Fixed
+
+- The daily report now names the module's configuration set on its send. It
+  used to inherit the From identity's default set; when that default was some
+  other set, SES refused the send (the policy only covers the module's set).
+  Its own sends are now counted by the pipeline too. Upgrading redeploys the
+  report Lambda.
+
+The two new inputs default to the previous behaviour.
 
 ## [1.0.2] - 2026-09-08
 
