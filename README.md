@@ -8,9 +8,9 @@ If you send from more than a handful of SES identities, the console gives you on
 account-wide reputation number and nothing per identity. A single bad list on one
 domain can put the whole account into probation or a sending pause. This module
 gives you per-identity daily counters, a record of every address that bounced or
-complained, and a daily digest. Notifications are deliberately **not** included:
-the module exposes the SES events SNS topic and you bolt your own notifier onto
-it — see [Notifications](#notifications).
+complained, and a daily digest. Real-time alerts are optional: point
+`alert_topic_arn` at an SNS topic (see [Alerts](#alerts-optional)), or bolt your
+own notifier onto the events topic (see [Notifications](#notifications)).
 
 ## What it builds
 
@@ -42,7 +42,7 @@ senders are captured with no application change.
 
 ```hcl
 module "ses_monitoring" {
-  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring?ref=v1.1.0"
+  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring?ref=v1.2.0"
 
   identities = [
     "example.com",
@@ -64,7 +64,7 @@ region gets a `modules/region-pipeline` instance writing into the same tables:
 
 ```hcl
 module "ses_monitoring_us_east_1" {
-  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring//modules/region-pipeline?ref=v1.1.0"
+  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring//modules/region-pipeline?ref=v1.2.0"
 
   providers = { aws = aws.us_east_1 }
 
@@ -80,11 +80,10 @@ module "ses_monitoring_us_east_1" {
 
 ## Notifications
 
-Alerting is out of scope on purpose. Every shop routes alerts differently — Slack,
-PagerDuty, Opsgenie, plain email — and baking one in means either a Slack-shaped
-module or a pile of options nobody wants. Instead the module hands you
-`events_topic_arn`, the SNS topic carrying raw SES events, and you subscribe your
-own consumer.
+The built-in notifier ([Alerts](#alerts-optional)) covers the common case: one
+message per permanent bounce or complaint to an SNS topic. For anything else
+(PagerDuty, Opsgenie, custom routing) the module hands you `events_topic_arn`,
+the SNS topic carrying raw SES events, and you subscribe your own consumer.
 
 SNS message-body filter policies narrow the subscription without any code:
 
@@ -140,7 +139,7 @@ alone.
 
 ```hcl
 module "ses_monitoring" {
-  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring?ref=v1.1.0"
+  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring?ref=v1.2.0"
 
   providers = { aws = aws.member }
 
@@ -154,6 +153,34 @@ module "ses_monitoring" {
   report_to_addresses = ["ops@example.com"]
 }
 ```
+
+## Alerts (optional)
+
+Set `alert_topic_arn` and the module adds a small notifier: a Lambda
+subscribed to the primary region's events topic (filter: Bounce/Complaint) that
+publishes each permanent bounce and each complaint to your topic, labelled with
+the account (`alert_account_label`) and region. The topic can be in another
+account, e.g. one central topic that Amazon Q Developer posts to Slack; its
+policy must allow the notifier's role to publish. One way, for every account in
+an organization:
+
+```hcl
+{
+  Effect    = "Allow"
+  Principal = { AWS = "*" }
+  Action    = "sns:Publish"
+  Resource  = "<alert topic ARN>"
+  Condition = {
+    StringEquals = { "aws:PrincipalOrgID" = "<o-xxxxxxxxxx>" }
+    ArnLike      = { "aws:PrincipalArn" = "arn:aws:iam::*:role/<name_prefix>-alert-notifier-role" }
+  }
+}
+```
+
+`alert_message_format = "amazon_q"` (default) sends Amazon Q's
+custom-notification JSON, which it needs for Slack/Teams; use `"text"` for email
+or other subscribers. Additional regions: subscribe `alert_notifier_function_arn`
+to their events topics.
 
 ## Data model
 
@@ -187,6 +214,11 @@ only — nothing is enforced or blocked on your behalf.
 | `identities` | Verified SES identities in the primary region to capture | `list(string)` | `[]` |
 | `suppression_bounce_subtypes` | Bounce types recorded in the suppression table | `list(string)` | `["Permanent"]` |
 | `attach_default_configuration_set` | Set the configuration set as each identity's default via the AWS CLI | `bool` | `true` |
+| `alert_topic_arn` | SNS topic for bounce/complaint alerts; null = no notifier | `string` | `null` |
+| `alert_message_format` | `amazon_q` (Chatbot JSON) or `text` | `string` | `"amazon_q"` |
+| `alert_bounce_types` | Bounce types that alert (complaints always do) | `list(string)` | `["Permanent"]` |
+| `alert_account_label` | Account name shown in alerts | `string` | account ID |
+| `alert_topic_kms_key_arn` | KMS key of an encrypted alert topic | `string` | `null` |
 | `attach_role_arn` | Role the AWS CLI assumes for that attachment (cross-account) | `string` | `null` |
 | `additional_configuration_sets` | Existing configuration sets that also get an SNS destination to the pipeline | `list(string)` | `[]` |
 | `matching_event_types` | SES event types delivered to the pipeline | `list(string)` | all six |

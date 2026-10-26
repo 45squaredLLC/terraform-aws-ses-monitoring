@@ -3,6 +3,16 @@
 All notable changes to this module are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-26
+
+### Added
+
+- Optional alert notifier (`alerts.tf`): set `alert_topic_arn` and a Lambda
+  subscribed to the events topic publishes each permanent bounce and each
+  complaint there, labelled with the account and region. `amazon_q` format
+  (default) for a topic Amazon Q Developer posts to Slack/Teams, `text` for
+  anything else. Off by default; upgrading from 1.1.0 changes nothing.
+
 ## [1.1.0] - 2026-10-26
 
 The repository moved to `45squaredLLC/terraform-aws-ses-monitoring` (from

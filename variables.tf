@@ -309,3 +309,49 @@ variable "metrics_reader_external_id" {
   type        = string
   default     = null
 }
+
+# ---------------------------------------------------------------------------
+# Optional alert notifier (alerts.tf)
+# ---------------------------------------------------------------------------
+variable "alert_topic_arn" {
+  description = <<-EOT
+    SNS topic to publish bounce and complaint alerts to. Null (the default)
+    creates no notifier. May be in another account or region; its policy must
+    allow this module's `<name_prefix>-alert-notifier-role` to publish.
+  EOT
+  type        = string
+  default     = null
+}
+
+variable "alert_message_format" {
+  description = <<-EOT
+    `amazon_q`: Amazon Q Developer in chat applications (AWS Chatbot) custom
+    notification JSON, for a topic it posts to Slack or Teams (it drops plain
+    text). `text`: subject + plain-text body, for email and other subscribers.
+  EOT
+  type        = string
+  default     = "amazon_q"
+
+  validation {
+    condition     = contains(["amazon_q", "text"], var.alert_message_format)
+    error_message = "alert_message_format must be \"amazon_q\" or \"text\"."
+  }
+}
+
+variable "alert_bounce_types" {
+  description = "Bounce types that raise an alert. Complaints always do."
+  type        = list(string)
+  default     = ["Permanent"]
+}
+
+variable "alert_account_label" {
+  description = "Label naming this account in each alert (e.g. its alias). Defaults to the account ID."
+  type        = string
+  default     = null
+}
+
+variable "alert_topic_kms_key_arn" {
+  description = "KMS key of the alert topic, if it is encrypted with a customer managed key."
+  type        = string
+  default     = null
+}
