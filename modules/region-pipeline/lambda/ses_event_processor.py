@@ -4,9 +4,16 @@ Triggered by an SNS topic subscribed to an SES v2 configuration set event
 destination (SEND / DELIVERY / BOUNCE / COMPLAINT / REJECT / DELIVERY_DELAY).
 
 For every event it increments a per-identity, per-day counter in the metrics
-DynamoDB table. For the configured bounce subtypes (permanent bounces by
-default) and for complaints it also records the offending address in the
-suppression table.
+DynamoDB table. Bounces also bump `bounces_permanent` or `bounces_transient`
+(Transient + Undetermined), so the daily report can rate only the permanent
+bounces that AWS counts toward sending reputation. For the configured bounce
+subtypes (permanent bounces by default) and for complaints it also records the
+offending address in the suppression table.
+
+Every non-permanent bounce is written to the function's CloudWatch Logs as one
+JSON line with `"log": "ses_soft_bounce"`, one line per bounced recipient, so
+soft bounces (mailbox full, auto-replies, deferrals) can be inspected with
+CloudWatch Logs Insights without keeping them in a table.
 
 Notifications are deliberately not part of this function. Subscribe your own
 consumer to the SES events SNS topic instead — SNS message-body filter policies
@@ -116,8 +123,52 @@ def _record_suppression(email, identity, reason, subtype, diagnostic):
     )
 
 
-def _handle_bounce(identity, bounce):
+# Bounce-type counters alongside the all-bounces `bounces` counter.
+PERMANENT_BOUNCE_COUNTER = "bounces_permanent"
+TRANSIENT_BOUNCE_COUNTER = "bounces_transient"  # Transient + Undetermined
+
+SOFT_BOUNCE_LOG_MARKER = "ses_soft_bounce"
+_DIAGNOSTIC_LOG_LIMIT = 1000
+_SUBJECT_LOG_LIMIT = 200
+
+
+def _bounce_counter(bounce):
+    """Counter for a bounce's type: permanent, or transient for anything else."""
+    if bounce.get("bounceType") == "Permanent":
+        return PERMANENT_BOUNCE_COUNTER
+    return TRANSIENT_BOUNCE_COUNTER
+
+
+def _log_soft_bounce(identity, mail, bounce):
+    """Write one structured log line per recipient of a non-permanent bounce."""
+    headers = mail.get("commonHeaders") or {}
+    recipients = bounce.get("bouncedRecipients") or [{}]
+    for recipient in recipients:
+        entry = {
+            "log": SOFT_BOUNCE_LOG_MARKER,
+            "timestamp": bounce.get("timestamp") or _now_iso(),
+            "identity": identity,
+            "sourceRegion": SOURCE_REGION,
+            "recipient": recipient.get("emailAddress"),
+            "bounceType": bounce.get("bounceType"),
+            "bounceSubType": bounce.get("bounceSubType"),
+            "diagnosticCode": (recipient.get("diagnosticCode") or "")[:_DIAGNOSTIC_LOG_LIMIT],
+            "status": recipient.get("status"),
+            "action": recipient.get("action"),
+            "reportingMTA": bounce.get("reportingMTA"),
+            "remoteMtaIp": bounce.get("remoteMtaIp"),
+            "feedbackId": bounce.get("feedbackId"),
+            "messageId": mail.get("messageId"),
+            "source": mail.get("source"),
+            "subject": (headers.get("subject") or "")[:_SUBJECT_LOG_LIMIT],
+        }
+        print(json.dumps({k: v for k, v in entry.items() if v not in (None, "")}))
+
+
+def _handle_bounce(identity, bounce, mail=None):
     subtype = bounce.get("bounceType")  # Permanent / Transient / Undetermined
+    if subtype != "Permanent":
+        _log_soft_bounce(identity, mail or {}, bounce)
     if subtype not in SUPPRESSION_BOUNCE_SUBTYPES:
         return
     for recipient in bounce.get("bouncedRecipients", []):
@@ -150,7 +201,9 @@ def _process_event(notification):
         _bump_counter(identity, counter)
 
     if event_type == "Bounce":
-        _handle_bounce(identity, notification.get("bounce", {}))
+        bounce = notification.get("bounce", {})
+        _bump_counter(identity, _bounce_counter(bounce))
+        _handle_bounce(identity, bounce, mail)
     elif event_type == "Complaint":
         _handle_complaint(identity, notification.get("complaint", {}))
 

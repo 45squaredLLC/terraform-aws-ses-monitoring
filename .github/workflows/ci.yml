@@ -58,6 +58,11 @@ jobs:
             lambda/ses_daily_report.py \
             modules/region-pipeline/lambda/ses_event_processor.py
 
+      - name: Unit tests
+        run: |
+          python -m pip install --quiet pytest
+          python -m pytest tests -q
+
       - name: Lint
         run: |
           pipx install ruff
