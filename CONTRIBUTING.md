@@ -10,6 +10,7 @@ terraform init -backend=false && terraform validate
 (cd examples/single-region && terraform init -backend=false && terraform validate)
 (cd examples/multi-region  && terraform init -backend=false && terraform validate)
 python -m py_compile lambda/ses_daily_report.py modules/region-pipeline/lambda/ses_event_processor.py
+python -m pytest tests -q
 ```
 
 CI runs the same checks on every push and pull request.

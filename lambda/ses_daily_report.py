@@ -2,7 +2,8 @@
 
 Triggered once a day by EventBridge. Reads the previous UTC day's per-identity
 counters from the metrics table (via the `date-index` GSI), computes per-identity
-bounce and complaint rates, flags identities over the configured thresholds,
+bounce and complaint rates (the bounce rate counts permanent bounces only, as
+AWS's reputation metric does), flags identities over the configured thresholds,
 lists addresses added to the suppression list in the last 24 hours, and emails an
 HTML digest via SES.
 """
@@ -23,7 +24,8 @@ REPORT_TO = [a.strip() for a in os.environ["REPORT_TO"].split(",") if a.strip()]
 # the From identity happens to carry (the IAM policy covers only this set).
 CONFIGURATION_SET = os.environ.get("CONFIGURATION_SET") or None
 
-# AWS danger thresholds: bounce >= 5%, complaint >= 0.1%.
+# AWS danger thresholds: bounce >= 5%, complaint >= 0.1%. The bounce threshold
+# applies to permanent bounces only.
 BOUNCE_THRESHOLD = float(os.environ.get("BOUNCE_THRESHOLD") or "0.05")
 COMPLAINT_THRESHOLD = float(os.environ.get("COMPLAINT_THRESHOLD") or "0.001")
 
@@ -75,9 +77,17 @@ def _summarize(item):
     bounces = _i(item.get("bounces"))
     complaints = _i(item.get("complaints"))
     rejects = _i(item.get("rejects"))
-    # Bounce rate denominator = delivered + bounced (AWS's definition).
-    bounce_denom = deliveries + bounces
-    bounce_rate = (bounces / bounce_denom) if bounce_denom else 0.0
+    if "bounces_permanent" in item or "bounces_transient" in item:
+        permanent = _i(item.get("bounces_permanent"))
+        transient = _i(item.get("bounces_transient"))
+    else:
+        # Rows written before the split counters existed: every bounce counts.
+        permanent = bounces
+        transient = None
+    # Only permanent (hard) bounces count toward AWS's bounce reputation.
+    # Denominator = delivered + bounced (AWS's definition).
+    bounce_denom = deliveries + permanent
+    bounce_rate = (permanent / bounce_denom) if bounce_denom else 0.0
     complaint_denom = deliveries or sends
     complaint_rate = (complaints / complaint_denom) if complaint_denom else 0.0
     return {
@@ -85,6 +95,8 @@ def _summarize(item):
         "sends": sends,
         "deliveries": deliveries,
         "bounces": bounces,
+        "bounces_permanent": permanent,
+        "bounces_transient": transient,
         "complaints": complaints,
         "rejects": rejects,
         "bounce_rate": bounce_rate,
@@ -96,12 +108,14 @@ def _summarize(item):
 def _row(r):
     color = "#ffd6d6" if r["flagged"] else "#ffffff"
     flag = "&#9888;&#65039; " if r["flagged"] else ""
+    transient = r["bounces_transient"]
     return (
         f'<tr style="background:{color}">'
         f"<td>{flag}{_e(r['identity'])}</td>"
         f'<td style="text-align:right">{r["sends"]}</td>'
         f'<td style="text-align:right">{r["deliveries"]}</td>'
-        f'<td style="text-align:right">{r["bounces"]}</td>'
+        f'<td style="text-align:right">{r["bounces_permanent"]}</td>'
+        f'<td style="text-align:right">{"n/a" if transient is None else transient}</td>'
         f'<td style="text-align:right">{r["bounce_rate"] * 100:.2f}%</td>'
         f'<td style="text-align:right">{r["complaints"]}</td>'
         f'<td style="text-align:right">{r["complaint_rate"] * 100:.3f}%</td>'
@@ -114,13 +128,14 @@ def _build_html(date_str, rows, flagged, new_blocks):
     header = (
         "<tr>"
         "<th align='left'>Identity</th><th>Sends</th><th>Delivered</th>"
-        "<th>Bounces</th><th>Bounce&nbsp;%</th><th>Complaints</th>"
+        "<th>Permanent<br>bounces</th><th>Transient<br>bounces</th>"
+        "<th>Bounce&nbsp;%</th><th>Complaints</th>"
         "<th>Complaint&nbsp;%</th><th>Rejects</th>"
         "</tr>"
     )
     banner = (
         f'<p style="color:#b00020;font-weight:bold">&#9888;&#65039; {len(flagged)} '
-        f"identity(ies) over threshold (bounce &ge; {BOUNCE_THRESHOLD * 100:.2f}%, "
+        f"identity(ies) over threshold (permanent bounce &ge; {BOUNCE_THRESHOLD * 100:.2f}%, "
         f"complaint &ge; {COMPLAINT_THRESHOLD * 100:.3f}%)</p>"
         if flagged
         else '<p style="color:#2e7d32">All identities within thresholds.</p>'
@@ -148,8 +163,12 @@ def _build_html(date_str, rows, flagged, new_blocks):
         "style='border-collapse:collapse'>"
         f"{header}{''.join(_row(r) for r in rows)}</table>"
         f"{block_section}"
-        "<p style='color:#888;font-size:12px'>Rates use delivered+bounced as the "
-        "bounce denominator, matching the AWS definition.</p>"
+        "<p style='color:#888;font-size:12px'>Bounce % counts permanent (hard) "
+        "bounces only, over delivered + permanent bounces, matching the AWS "
+        "reputation metric. Transient bounces (mailbox full, auto-replies, "
+        "deferrals) don't count toward AWS's bounce reputation; each one is "
+        "logged by the event processor (log=ses_soft_bounce). Transient shows "
+        "n/a for days recorded before the split counters existed.</p>"
         "</body></html>"
     )
 

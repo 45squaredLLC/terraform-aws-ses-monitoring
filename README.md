@@ -25,13 +25,14 @@ SES identity (default configuration set = this module's)
    ▼
 SNS <prefix>-events-<region> ──┬▶ Lambda <prefix>-event-processor-<region>
                                │    ├─ ADD counters → DynamoDB <prefix>-event-metrics
-                               │    └─ permanent bounce / complaint → DynamoDB <prefix>-suppression-list
+                               │    ├─ permanent bounce / complaint → DynamoDB <prefix>-suppression-list
+                               │    └─ transient bounce → JSON log line (log=ses_soft_bounce)
                                │
                                └▶ your own notifier (bolt-on, not part of this module)
 
 EventBridge (daily) ───────────▶ Lambda <prefix>-daily-report
                                    ├─ read yesterday's counters via the date-index GSI
-                                   ├─ compute per-identity bounce % / complaint %
+                                   ├─ compute per-identity permanent bounce % / complaint %
                                    └─ SES SendEmail HTML digest
 ```
 
@@ -42,7 +43,7 @@ senders are captured with no application change.
 
 ```hcl
 module "ses_monitoring" {
-  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring?ref=v1.2.0"
+  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring?ref=v1.3.0"
 
   identities = [
     "example.com",
@@ -64,7 +65,7 @@ region gets a `modules/region-pipeline` instance writing into the same tables:
 
 ```hcl
 module "ses_monitoring_us_east_1" {
-  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring//modules/region-pipeline?ref=v1.2.0"
+  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring//modules/region-pipeline?ref=v1.3.0"
 
   providers = { aws = aws.us_east_1 }
 
@@ -139,7 +140,7 @@ alone.
 
 ```hcl
 module "ses_monitoring" {
-  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring?ref=v1.2.0"
+  source = "github.com/45squaredLLC/terraform-aws-ses-monitoring?ref=v1.3.0"
 
   providers = { aws = aws.member }
 
@@ -186,7 +187,8 @@ to their events topics.
 
 **Metrics table** — `identity` (HASH) / `date` `YYYY-MM-DD` (RANGE). Counters
 incremented with atomic `ADD`: `sends`, `deliveries`, `bounces`, `complaints`,
-`rejects`, `delivery_delays`. GSI `date-index` (`date` HASH / `identity` RANGE)
+`rejects`, `delivery_delays`. Each bounce also bumps `bounces_permanent` or
+`bounces_transient` (Transient and Undetermined), so `bounces` stays the total. GSI `date-index` (`date` HASH / `identity` RANGE)
 lets the report list every identity for a day. TTL on `expires_at`
 (`metrics_ttl_days`, default 90).
 
@@ -199,7 +201,11 @@ account-level suppression list. `email` (HASH), attributes `identity`, `reason`,
 
 The daily report flags an identity at the AWS danger levels:
 
-- **bounce rate ≥ 5%** — `bounces / (deliveries + bounces)`
+- **bounce rate ≥ 5%** — `bounces_permanent / (deliveries + bounces_permanent)`.
+  Only permanent (hard) bounces count, as in AWS's reputation metric; transient
+  bounces (mailbox full, auto-replies, deferrals) appear in their own column but
+  never flag. Rows written before 1.3.0 lack the split counters, so the report
+  falls back to `bounces` for them.
 - **complaint rate ≥ 0.1%** — `complaints / deliveries`
 
 Tune with `bounce_threshold` / `complaint_threshold`. These affect the digest
@@ -316,6 +322,25 @@ events if you use it.
 - The suppression table holds recipient email addresses (personal data). Set
   `dynamodb_kms_key_arn` and consider a retention process if that matters to you.
 - Bounce diagnostic codes are truncated to 512 characters before storage.
+- The soft-bounce log holds recipient addresses and message subjects in
+  CloudWatch Logs; set `logs_kms_key_arn` and `log_retention_days` to suit.
+
+## Soft-bounce log
+
+Permanent bounces go to the suppression table; transient and undetermined ones
+do not, so the event processor writes each one (one line per recipient) to its
+CloudWatch log group, `/aws/lambda/<prefix>-event-processor-<region>`, as JSON
+with `"log": "ses_soft_bounce"`: `timestamp`, `identity`, `sourceRegion`,
+`recipient`, `bounceType`, `bounceSubType`, `diagnosticCode` (first 1000
+characters), `status`, `action`, `reportingMTA`, `remoteMtaIp`, `feedbackId`,
+`messageId`, `source` and `subject` (first 200 characters). Kept for
+`log_retention_days`. Query it with CloudWatch Logs Insights:
+
+```
+fields @timestamp, recipient, bounceSubType, diagnosticCode
+| filter log = "ses_soft_bounce" and identity = "example.com"
+| sort @timestamp desc
+```
 
 ## Verifying a deployment
 

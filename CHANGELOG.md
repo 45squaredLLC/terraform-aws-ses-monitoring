@@ -3,6 +3,29 @@
 All notable changes to this module are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-11-17
+
+### Changed
+
+- The daily report's bounce rate counts permanent (hard) bounces only, matching
+  the AWS reputation metric: `bounces_permanent / (deliveries +
+  bounces_permanent)`, flagged at `bounce_threshold` as before. Transient
+  bounces (mailbox full, auto-replies, deferrals) no longer flag an identity.
+  The table shows Permanent and Transient bounces as separate columns. Rows
+  written before this release fall back to the all-bounces count.
+
+### Added
+
+- Metrics counters `bounces_permanent` and `bounces_transient` (Transient and
+  Undetermined) per identity and day. `bounces` still counts every bounce.
+- A structured log line per recipient of every non-permanent bounce, in the
+  event processor's log group, with `"log": "ses_soft_bounce"` (see README,
+  Soft-bounce log). The permanent-bounce suppression path is unchanged.
+- Unit tests for the Lambda sources (`tests/`, run in CI).
+
+Upgrading redeploys the event processor and daily report Lambdas; no resource
+is replaced and no input changes.
+
 ## [1.2.0] - 2026-10-26
 
 ### Added
