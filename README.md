@@ -228,6 +228,7 @@ only — nothing is enforced or blocked on your behalf.
 | `attach_role_arn` | Role the AWS CLI assumes for that attachment (cross-account) | `string` | `null` |
 | `additional_configuration_sets` | Existing configuration sets that also get an SNS destination to the pipeline | `list(string)` | `[]` |
 | `matching_event_types` | SES event types delivered to the pipeline | `list(string)` | all six |
+| `delivery_options` | Configuration set delivery options (`tls_policy`, `sending_pool_name`); `{}` where SES reports delivery options on every set (us-west-2) | `object` | `null` |
 | `name_prefix` | Prefix for every resource name | `string` | `"ses-monitoring"` |
 | `configuration_set_name` | Override the configuration set name | `string` | `name_prefix` |
 | `events_topic_name` | Override the events topic name | `string` | `"<name_prefix>-events-<region>"` |

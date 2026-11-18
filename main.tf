@@ -99,6 +99,7 @@ module "primary_pipeline" {
   attach_default_configuration_set = var.attach_default_configuration_set
   attach_role_arn                  = var.attach_role_arn
   additional_configuration_sets    = var.additional_configuration_sets
+  delivery_options                 = var.delivery_options
   matching_event_types             = var.matching_event_types
 
   metrics_table_name     = aws_dynamodb_table.metrics.name

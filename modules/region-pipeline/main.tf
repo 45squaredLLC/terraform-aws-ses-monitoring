@@ -4,6 +4,14 @@
 resource "aws_sesv2_configuration_set" "this" {
   configuration_set_name = local.configuration_set_name
   tags                   = var.tags
+
+  dynamic "delivery_options" {
+    for_each = var.delivery_options == null ? [] : [var.delivery_options]
+    content {
+      tls_policy        = delivery_options.value.tls_policy
+      sending_pool_name = delivery_options.value.sending_pool_name
+    }
+  }
 }
 
 resource "aws_sns_topic" "events" {
