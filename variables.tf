@@ -96,7 +96,7 @@ variable "delivery_options" {
   default = null
 
   validation {
-    condition     = var.delivery_options == null || contains(["REQUIRE", "OPTIONAL", ""], coalesce(try(var.delivery_options.tls_policy, null), ""))
+    condition     = try(var.delivery_options.tls_policy, null) == null || contains(["REQUIRE", "OPTIONAL"], try(var.delivery_options.tls_policy, ""))
     error_message = "delivery_options.tls_policy must be REQUIRE, OPTIONAL or unset."
   }
 }
