@@ -66,6 +66,28 @@ variable "additional_configuration_sets" {
   default     = []
 }
 
+variable "delivery_options" {
+  description = <<-EOT
+    Delivery options for the configuration set this module creates. Null (the
+    default) leaves them out of the configuration. Set `{}` in regions where SES
+    returns a DeliveryOptions object for every configuration set (us-west-2 since
+    November 2026: it reports `SharedPoolDeliveryMode`, which the AWS provider
+    does not model); without a block here the provider then plans to remove
+    delivery options on every run. `tls_policy = "REQUIRE"` refuses delivery to
+    servers without TLS.
+  EOT
+  type = object({
+    tls_policy        = optional(string)
+    sending_pool_name = optional(string)
+  })
+  default = null
+
+  validation {
+    condition     = var.delivery_options == null || contains(["REQUIRE", "OPTIONAL", ""], coalesce(try(var.delivery_options.tls_policy, null), ""))
+    error_message = "delivery_options.tls_policy must be REQUIRE, OPTIONAL or unset."
+  }
+}
+
 variable "matching_event_types" {
   description = "SES event types delivered to the pipeline."
   type        = list(string)

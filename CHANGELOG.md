@@ -3,6 +3,20 @@
 All notable changes to this module are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-11-18
+
+### Added
+
+- `delivery_options` input (root module and `modules/region-pipeline`):
+  `tls_policy` and `sending_pool_name` for the configuration set. Since
+  November 2026 SES in us-west-2 returns a DeliveryOptions object for every
+  configuration set (only `SharedPoolDeliveryMode`, which the AWS provider does
+  not model, is set), so a set with no delivery options in the configuration
+  showed a perpetual "remove delivery_options" diff. Pass `delivery_options = {}`
+  there to match.
+
+Default `null` keeps 1.3.0 behaviour; no resource is replaced.
+
 ## [1.3.0] - 2026-11-17
 
 ### Changed
